@@ -114,39 +114,6 @@ export default function HomePage() {
     setAmounts((a) => ({ ...a, [key(matchId, market)]: value }));
   }
 
-  async function placeBet(matchId, market) {
-    const k = key(matchId, market);
-    const choice = selections[k];
-    const amount = Number(amounts[k]);
-    setMsg((m) => ({ ...m, [k]: null }));
-
-    if (!choice) {
-      setMsg((m) => ({ ...m, [k]: { type: 'error', text: '항목을 선택해주세요.' } }));
-      return;
-    }
-    if (!amount || amount <= 0) {
-      setMsg((m) => ({ ...m, [k]: { type: 'error', text: '배팅 포인트를 입력해주세요.' } }));
-      return;
-    }
-    if (amount > points) {
-      setMsg((m) => ({ ...m, [k]: { type: 'error', text: '보유 포인트가 부족합니다.' } }));
-      return;
-    }
-
-    const res = await fetch('/api/bet', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, matchId, market, choice, points: amount }),
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      setMsg((m) => ({ ...m, [k]: { type: 'error', text: data.error || '배팅 실패' } }));
-      return;
-    }
-    setMsg((m) => ({ ...m, [k]: { type: 'success', text: '배팅 완료!' } }));
-    loadData(userId);
-  }
 
   async function deleteBet(betId) {
     if (!confirm('이 배팅을 삭제하고 포인트를 환불받으시겠습니까?')) return;
