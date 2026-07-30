@@ -11,14 +11,14 @@ export default function HomePage() {
   const [userName, setUserName] = useState('');
   const [points, setPoints] = useState(null);
   const [matches, setMatches] = useState([]);
-  const [allBets, setAllBets] = useState([]); // 전체 유저의 배팅 (판돈 규모 표시용)
+  const [allBets, setAllBets] = useState([]);
   const [myBets, setMyBets] = useState([]);
-  const [selections, setSelections] = useState({}); // `${matchId}:${market}` -> choice
-  const [amounts, setAmounts] = useState({}); // `${matchId}:${market}` -> amount
+  const [selections, setSelections] = useState({});
+  const [amounts, setAmounts] = useState({});
   const [msg, setMsg] = useState({});
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
   const [bettingInProgress, setBettingInProgress] = useState({});
+  const router = useRouter();
 
   const loadData = useCallback(async (uid) => {
     const { data: userRow } = await supabase.from('users').select('points, name').eq('id', uid).single();
@@ -47,10 +47,31 @@ export default function HomePage() {
     loadData(uid);
   }, [loadData, router]);
 
+  function key(matchId, market) {
+    return `${matchId}:${market}`;
+  }
+
+  function poolFor(matchId, market, choice) {
+    return allBets
+      .filter((b) => b.match_id === matchId && b.market === market && b.choice === choice)
+      .reduce((s, b) => s + b.points_bet, 0);
+  }
+
+  function myBetFor(matchId, market) {
+    return myBets.find((b) => b.match_id === matchId && b.market === market);
+  }
+
+  function select(matchId, market, choice) {
+    setSelections((s) => ({ ...s, [key(matchId, market)]: choice }));
+  }
+
+  function setAmount(matchId, market, value) {
+    setAmounts((a) => ({ ...a, [key(matchId, market)]: value }));
+  }
+
   async function placeBet(matchId, market) {
     const k = key(matchId, market);
     
-    // ✅ 이미 진행 중이면 무시
     if (bettingInProgress[k]) {
       return;
     }
@@ -72,7 +93,6 @@ export default function HomePage() {
       return;
     }
 
-    // ✅ 진행 중 표시
     setBettingInProgress((b) => ({ ...b, [k]: true }));
 
     const res = await fetch('/api/bet', {
@@ -82,7 +102,6 @@ export default function HomePage() {
     });
     const data = await res.json();
 
-    // ✅ 진행 중 해제
     setBettingInProgress((b) => ({ ...b, [k]: false }));
 
     if (!res.ok) {
@@ -92,28 +111,6 @@ export default function HomePage() {
     setMsg((m) => ({ ...m, [k]: { type: 'success', text: '배팅 완료!' } }));
     loadData(userId);
   }
-
-  function key(matchId, market) {
-    return `${matchId}:${market}`;
-  }
-
-  function poolFor(matchId, market, choice) {
-    return allBets
-      .filter((b) => b.match_id === matchId && b.market === market && b.choice === choice)
-      .reduce((s, b) => s + b.points_bet, 0);
-  }
-
-  function myBetFor(matchId, market) {
-    return myBets.find((b) => b.match_id === matchId && b.market === market);
-  }
-
-  function select(matchId, market, choice) {
-    setSelections((s) => ({ ...s, [key(matchId, market)]: choice }));
-  }
-  function setAmount(matchId, market, value) {
-    setAmounts((a) => ({ ...a, [key(matchId, market)]: value }));
-  }
-
 
   async function deleteBet(betId) {
     if (!confirm('이 배팅을 삭제하고 포인트를 환불받으시겠습니까?')) return;
@@ -174,7 +171,6 @@ export default function HomePage() {
                 <span className={`status-tag ${isClosed ? 'closed' : 'open'}`}>{isClosed ? '마감' : '배팅 가능'}</span>
               </div>
 
-              {/* 승부 예측 */}
               <BetSection
                 label="🏆 승부 예측"
                 matchId={match.id}
@@ -192,10 +188,10 @@ export default function HomePage() {
                 setAmount={setAmount}
                 placeBet={placeBet}
                 msg={msg}
+                bettingInProgress={bettingInProgress}
                 choiceLabelFn={(c) => (c === 'A' ? match.team_a_name : match.team_b_name)}
               />
 
-              {/* A팀 업다운 */}
               {match.benchmark_a !== null && (
                 <BetSection
                   label={`📈 ${match.team_a_name} 업다운 (기준 ${match.benchmark_a}점)`}
@@ -214,11 +210,11 @@ export default function HomePage() {
                   setAmount={setAmount}
                   placeBet={placeBet}
                   msg={msg}
+                  bettingInProgress={bettingInProgress}
                   choiceLabelFn={(c) => (c === 'UP' ? '업(UP)' : '다운(DOWN)')}
                 />
               )}
 
-              {/* B팀 업다운 */}
               {match.benchmark_b !== null && (
                 <BetSection
                   label={`📈 ${match.team_b_name} 업다운 (기준 ${match.benchmark_b}점)`}
@@ -237,6 +233,7 @@ export default function HomePage() {
                   setAmount={setAmount}
                   placeBet={placeBet}
                   msg={msg}
+                  bettingInProgress={bettingInProgress}
                   choiceLabelFn={(c) => (c === 'UP' ? '업(UP)' : '다운(DOWN)')}
                 />
               )}
@@ -328,7 +325,7 @@ export default function HomePage() {
   );
 }
 
-function BetSection({ label, matchId, market, isClosed, options, pool, myBet, selections, amounts, select, setAmount, placeBet, msg, choiceLabelFn }) {
+function BetSection({ label, matchId, market, isClosed, options, pool, myBet, selections, amounts, select, setAmount, placeBet, msg, bettingInProgress, choiceLabelFn }) {
   const k = `${matchId}:${market}`;
   const totalPool = options.reduce((s, o) => s + pool(o.choice), 0);
 
@@ -365,11 +362,12 @@ function BetSection({ label, matchId, market, isClosed, options, pool, myBet, se
               placeholder="포인트"
               value={amounts[k] || ''}
               onChange={(e) => setAmount(matchId, market, e.target.value)}
+              disabled={bettingInProgress[k]}
             />
             <button 
               className="primary" 
               onClick={() => placeBet(matchId, market)}
-              disabled={bettingInProgress[k]}  // ✅ 진행 중이면 버튼 비활성화
+              disabled={bettingInProgress[k]}
             >
               {bettingInProgress[k] ? '배팅 중...' : '배팅'}
             </button>
