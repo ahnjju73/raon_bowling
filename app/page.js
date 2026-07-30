@@ -67,24 +67,6 @@ export default function HomePage() {
     setAmounts((a) => ({ ...a, [key(matchId, market)]: value }));
   }
 
-  async function deleteBet(betId) {
-    if (!confirm('이 배팅을 삭제하고 포인트를 환불받으시겠습니까?')) return;
-
-    const res = await fetch('/api/bet/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, betId }),
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      alert('삭제 실패: ' + data.error);
-      return;
-    }
-    alert(`삭제 완료! ${data.pointsRefunded}P 환불되었습니다.`);
-    loadData(userId);
-  }
-
   async function placeBet(matchId, market) {
     const k = key(matchId, market);
     const choice = selections[k];
@@ -119,6 +101,24 @@ export default function HomePage() {
     loadData(userId);
   }
 
+  async function deleteBet(betId) {
+    if (!confirm('이 배팅을 삭제하고 포인트를 환불받으시겠습니까?')) return;
+
+    const res = await fetch('/api/bet/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, betId }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert('삭제 실패: ' + data.error);
+      return;
+    }
+    alert(`삭제 완료! ${data.pointsRefunded}P 환불되었습니다.`);
+    loadData(userId);
+  }
+
   function logout() {
     localStorage.removeItem('toto_user_id');
     localStorage.removeItem('toto_user_name');
@@ -128,8 +128,6 @@ export default function HomePage() {
   function teamTotal(players) {
     return (players || []).reduce((sum, p) => sum + (Number(p.g1) || 0) + (Number(p.g2) || 0) + (Number(p.g3) || 0), 0);
   }
-
-  
 
   if (loading) return <div className="container"><p className="empty">불러오는 중...</p></div>;
 
@@ -281,14 +279,28 @@ export default function HomePage() {
               b.market === 'WINLOSE'
                 ? (b.choice === 'A' ? match?.team_a_name : match?.team_b_name)
                 : (b.choice === 'UP' ? '업(UP)' : '다운(DOWN)');
+            const isClosed = match && (match.status !== 'OPEN' || new Date(match.deadline) < new Date());
+            const canDelete = !b.settled && !isClosed;
+
             return (
-              <div className="bet-history-item" key={b.id}>
-                <span>
-                  {match?.title} · {MARKET_LABEL[b.market]}({choiceLabel}) · {b.points_bet}P
-                </span>
-                <span style={{ color: !b.settled ? 'var(--muted)' : b.won === null ? 'var(--muted)' : b.won ? 'var(--accent-2)' : 'var(--danger)' }}>
-                  {!b.settled ? '결과 대기' : b.won === null ? `환불 ${b.points_won}P` : b.won ? `+${b.points_won}P 적중` : '낙첨'}
-                </span>
+              <div key={b.id} style={{ marginBottom: 12 }}>
+                <div className="bet-history-item">
+                  <span>
+                    {match?.title} · {MARKET_LABEL[b.market]}({choiceLabel}) · {b.points_bet}P
+                  </span>
+                  <span style={{ color: !b.settled ? 'var(--muted)' : b.won === null ? 'var(--muted)' : b.won ? 'var(--accent-2)' : 'var(--danger)' }}>
+                    {!b.settled ? '결과 대기' : b.won === null ? `환불 ${b.points_won}P` : b.won ? `+${b.points_won}P 적중` : '낙첨'}
+                  </span>
+                </div>
+                {canDelete && (
+                  <button 
+                    className="ghost" 
+                    style={{ fontSize: 12, padding: '4px 8px', marginTop: 6 }}
+                    onClick={() => deleteBet(b.id)}
+                  >
+                    삭제하기
+                  </button>
+                )}
               </div>
             );
           })}
