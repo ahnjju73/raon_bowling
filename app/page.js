@@ -119,7 +119,7 @@ export default function HomePage() {
   return (
     <>
       <div className="header">
-        <h1>🎳 동호회 토토</h1>
+        <h1>🎳 라온 3인조 토토</h1>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <span className="points-badge">{userName} · {points}P</span>
           <button className="ghost" onClick={logout}>로그아웃</button>

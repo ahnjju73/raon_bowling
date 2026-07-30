@@ -53,11 +53,8 @@ export default function LoginPage() {
 
   return (
     <div className="container" style={{ maxWidth: 380, paddingTop: 80 }}>
-      <h1 style={{ textAlign: 'center', marginBottom: 6 }}>🏆 동호회 토토</h1>
-      <p style={{ textAlign: 'center', color: 'var(--muted)', marginBottom: 30 }}>
-        가입한 적 없다면 자동으로 계정이 만들어져요.
-        <br />처음 가입 시 1000P 지급됩니다.
-      </p>
+      <h1 style={{ textAlign: 'center', marginBottom: 6 }}>🏆 라온 3인조 토토</h1>
+      
       <form onSubmit={handleLogin} className="card">
         <div className="form-group">
           <label>이름</label>
