@@ -18,6 +18,7 @@ export default function HomePage() {
   const [msg, setMsg] = useState({});
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const [bettingInProgress, setBettingInProgress] = useState({});
 
   const loadData = useCallback(async (uid) => {
     const { data: userRow } = await supabase.from('users').select('points, name').eq('id', uid).single();
@@ -45,6 +46,52 @@ export default function HomePage() {
     setUserId(uid);
     loadData(uid);
   }, [loadData, router]);
+
+  async function placeBet(matchId, market) {
+    const k = key(matchId, market);
+    
+    // ✅ 이미 진행 중이면 무시
+    if (bettingInProgress[k]) {
+      return;
+    }
+
+    const choice = selections[k];
+    const amount = Number(amounts[k]);
+    setMsg((m) => ({ ...m, [k]: null }));
+
+    if (!choice) {
+      setMsg((m) => ({ ...m, [k]: { type: 'error', text: '항목을 선택해주세요.' } }));
+      return;
+    }
+    if (!amount || amount <= 0) {
+      setMsg((m) => ({ ...m, [k]: { type: 'error', text: '배팅 포인트를 입력해주세요.' } }));
+      return;
+    }
+    if (amount > points) {
+      setMsg((m) => ({ ...m, [k]: { type: 'error', text: '보유 포인트가 부족합니다.' } }));
+      return;
+    }
+
+    // ✅ 진행 중 표시
+    setBettingInProgress((b) => ({ ...b, [k]: true }));
+
+    const res = await fetch('/api/bet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, matchId, market, choice, points: amount }),
+    });
+    const data = await res.json();
+
+    // ✅ 진행 중 해제
+    setBettingInProgress((b) => ({ ...b, [k]: false }));
+
+    if (!res.ok) {
+      setMsg((m) => ({ ...m, [k]: { type: 'error', text: data.error || '배팅 실패' } }));
+      return;
+    }
+    setMsg((m) => ({ ...m, [k]: { type: 'success', text: '배팅 완료!' } }));
+    loadData(userId);
+  }
 
   function key(matchId, market) {
     return `${matchId}:${market}`;
@@ -352,7 +399,13 @@ function BetSection({ label, matchId, market, isClosed, options, pool, myBet, se
               value={amounts[k] || ''}
               onChange={(e) => setAmount(matchId, market, e.target.value)}
             />
-            <button className="primary" onClick={() => placeBet(matchId, market)}>배팅</button>
+            <button 
+              className="primary" 
+              onClick={() => placeBet(matchId, market)}
+              disabled={bettingInProgress[k]}  // ✅ 진행 중이면 버튼 비활성화
+            >
+              {bettingInProgress[k] ? '배팅 중...' : '배팅'}
+            </button>
           </div>
         )
       )}
