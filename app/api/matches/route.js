@@ -6,12 +6,11 @@ function checkAdmin(password) {
 }
 
 function buildEmptyScores(players) {
-  // players: ["철수", "영희", "민수"] -> [{name, g1:null, g2:null, g3:null}, ...]
   return (players || []).map((name) => ({ name: (name || '').trim(), g1: null, g2: null, g3: null }));
 }
 
 function validateMatchInput(body) {
-  const { title, team_a_name, team_b_name, players_a, players_b, deadline } = body;
+  const { title, team_a_name, team_b_name, players_a, players_b, deadline, benchmark_a, benchmark_b } = body;
   if (!title || !team_a_name || !team_b_name || !deadline) {
     return '필수 항목(제목, 팀명, 마감시각)을 모두 입력해주세요.';
   }
@@ -21,13 +20,19 @@ function validateMatchInput(body) {
   if (!Array.isArray(players_b) || players_b.filter((n) => n && n.trim()).length !== 3) {
     return `${team_b_name} 선수 이름을 3명 모두 입력해주세요.`;
   }
+  if (benchmark_a === '' || benchmark_a === null || benchmark_a === undefined || isNaN(Number(benchmark_a))) {
+    return `${team_a_name}의 업다운 기준점수(평균)를 입력해주세요.`;
+  }
+  if (benchmark_b === '' || benchmark_b === null || benchmark_b === undefined || isNaN(Number(benchmark_b))) {
+    return `${team_b_name}의 업다운 기준점수(평균)를 입력해주세요.`;
+  }
   return null;
 }
 
 // 경기 등록
 export async function POST(req) {
   const body = await req.json();
-  const { password, title, team_a_name, team_b_name, players_a, players_b, odds_a, odds_b, deadline } = body;
+  const { password, title, team_a_name, team_b_name, players_a, players_b, benchmark_a, benchmark_b, deadline } = body;
 
   if (!checkAdmin(password)) {
     return NextResponse.json({ error: '관리자 비밀번호가 틀렸습니다.' }, { status: 401 });
@@ -44,8 +49,8 @@ export async function POST(req) {
     team_b_name,
     scores_a: buildEmptyScores(players_a),
     scores_b: buildEmptyScores(players_b),
-    odds_a: odds_a || 1.9,
-    odds_b: odds_b || 1.9,
+    benchmark_a: Number(benchmark_a),
+    benchmark_b: Number(benchmark_b),
     deadline,
   });
 
@@ -58,7 +63,7 @@ export async function POST(req) {
 // 경기 수정 (정산 전까지만 가능)
 export async function PATCH(req) {
   const body = await req.json();
-  const { password, matchId, title, team_a_name, team_b_name, players_a, players_b, odds_a, odds_b, deadline } = body;
+  const { password, matchId, title, team_a_name, team_b_name, players_a, players_b, benchmark_a, benchmark_b, deadline } = body;
 
   if (!checkAdmin(password)) {
     return NextResponse.json({ error: '관리자 비밀번호가 틀렸습니다.' }, { status: 401 });
@@ -102,8 +107,8 @@ export async function PATCH(req) {
       team_b_name,
       scores_a: mergeScores(match.scores_a, players_a),
       scores_b: mergeScores(match.scores_b, players_b),
-      odds_a: odds_a || 1.9,
-      odds_b: odds_b || 1.9,
+      benchmark_a: Number(benchmark_a),
+      benchmark_b: Number(benchmark_b),
       deadline,
     })
     .eq('id', matchId);

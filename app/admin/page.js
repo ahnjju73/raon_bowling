@@ -11,15 +11,15 @@ const emptyForm = {
   team_b_name: '',
   players_a: [...emptyPlayers],
   players_b: [...emptyPlayers],
-  odds_a: '1.9',
-  odds_b: '1.9',
+  benchmark_a: '',
+  benchmark_b: '',
   deadline: '',
 };
 
 export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [unlocked, setUnlocked] = useState(false);
-  const [tab, setTab] = useState('points'); // points | matches | results
+  const [tab, setTab] = useState('points'); // points | matches | results | bets
 
   if (!unlocked) {
     return (
@@ -44,15 +44,17 @@ export default function AdminPage() {
   return (
     <div className="container">
       <h1>⚙️ 관리자 페이지</h1>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         <button className={tab === 'points' ? 'primary' : 'ghost'} onClick={() => setTab('points')}>포인트 지급</button>
         <button className={tab === 'matches' ? 'primary' : 'ghost'} onClick={() => setTab('matches')}>경기 등록·수정</button>
         <button className={tab === 'results' ? 'primary' : 'ghost'} onClick={() => setTab('results')}>결과 입력</button>
+        <button className={tab === 'bets' ? 'primary' : 'ghost'} onClick={() => setTab('bets')}>배팅 내역</button>
       </div>
 
       {tab === 'points' && <PointsTab password={password} />}
       {tab === 'matches' && <MatchesTab password={password} />}
       {tab === 'results' && <ResultsTab password={password} />}
+      {tab === 'bets' && <BetsTab />}
     </div>
   );
 }
@@ -166,9 +168,8 @@ function MatchesTab({ password }) {
       team_b_name: m.team_b_name,
       players_a: (m.scores_a || []).map((p) => p.name),
       players_b: (m.scores_b || []).map((p) => p.name),
-      odds_a: String(m.odds_a),
-      odds_b: String(m.odds_b),
-      // datetime-local 입력용 포맷 변환
+      benchmark_a: m.benchmark_a !== null ? String(m.benchmark_a) : '',
+      benchmark_b: m.benchmark_b !== null ? String(m.benchmark_b) : '',
       deadline: new Date(m.deadline).toISOString().slice(0, 16),
     });
     setMsg(null);
@@ -196,8 +197,8 @@ function MatchesTab({ password }) {
         team_b_name: form.team_b_name,
         players_a: form.players_a,
         players_b: form.players_b,
-        odds_a: Number(form.odds_a),
-        odds_b: Number(form.odds_b),
+        benchmark_a: form.benchmark_a,
+        benchmark_b: form.benchmark_b,
         deadline: form.deadline,
       }),
     });
@@ -234,8 +235,8 @@ function MatchesTab({ password }) {
             </div>
           </div>
           <div className="form-group">
-            <label>A팀 배당률</label>
-            <input type="text" value={form.odds_a} onChange={(e) => setForm({ ...form, odds_a: e.target.value })} />
+            <label>A팀 업다운 기준점수 (선수 평균점수 기준)</label>
+            <input type="number" value={form.benchmark_a} onChange={(e) => setForm({ ...form, benchmark_a: e.target.value })} placeholder="예: 180" />
           </div>
 
           <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
@@ -253,14 +254,18 @@ function MatchesTab({ password }) {
             </div>
           </div>
           <div className="form-group">
-            <label>B팀 배당률</label>
-            <input type="text" value={form.odds_b} onChange={(e) => setForm({ ...form, odds_b: e.target.value })} />
+            <label>B팀 업다운 기준점수 (선수 평균점수 기준)</label>
+            <input type="number" value={form.benchmark_b} onChange={(e) => setForm({ ...form, benchmark_b: e.target.value })} placeholder="예: 180" />
           </div>
 
           <div className="form-group">
             <label>배팅 마감 시각</label>
             <input type="datetime-local" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
           </div>
+
+          <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: -4, marginBottom: 12 }}>
+            * 배당은 고정값이 아니라, 마감 후 같은 항목에 배팅한 사람들끼리 판돈을 배팅 비율대로 나눠 갖는 자동배당 방식입니다.
+          </p>
 
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="primary" type="submit" style={{ flex: 1 }}>
@@ -280,9 +285,10 @@ function MatchesTab({ password }) {
             <span className={`status-tag ${m.status.toLowerCase()}`}>{m.status}</span>
           </div>
           <p style={{ color: 'var(--muted)', fontSize: 14 }}>
-            {m.team_a_name} ({(m.scores_a || []).map((p) => p.name).join(', ')}) vs{' '}
-            {m.team_b_name} ({(m.scores_b || []).map((p) => p.name).join(', ')})<br />
-            배당 {m.odds_a} / {m.odds_b} · 마감: {new Date(m.deadline).toLocaleString('ko-KR')}
+            {m.team_a_name} ({(m.scores_a || []).map((p) => p.name).join(', ')}) · 기준 {m.benchmark_a}점 vs{' '}
+            {m.team_b_name} ({(m.scores_b || []).map((p) => p.name).join(', ')}) · 기준 {m.benchmark_b}점
+            <br />
+            마감: {new Date(m.deadline).toLocaleString('ko-KR')}
           </p>
           {m.status === 'SETTLED' ? (
             <p className="msg success">정산 완료 ({m.result === 'A' ? m.team_a_name : m.team_b_name} 승)</p>
@@ -297,11 +303,11 @@ function MatchesTab({ password }) {
 }
 
 // ============================================================
-// 3. 결과 입력 탭 (개인 3게임 점수 → 자동 팀 승패 판정)
+// 3. 결과 입력 탭 (개인 3게임 점수 → 승부 + 업다운 자동 판정)
 // ============================================================
 function ResultsTab({ password }) {
   const [matches, setMatches] = useState([]);
-  const [scores, setScores] = useState({}); // matchId -> { A: [{name,g1,g2,g3}x3], B: [...] }
+  const [scores, setScores] = useState({});
   const [msg, setMsg] = useState({});
 
   const loadMatches = useCallback(async () => {
@@ -369,6 +375,8 @@ function ResultsTab({ password }) {
         if (!teamScores) return null;
         const totalA = teamTotal(teamScores.A);
         const totalB = teamTotal(teamScores.B);
+        const avgA = (totalA / 3).toFixed(1);
+        const avgB = (totalB / 3).toFixed(1);
 
         return (
           <div className="card" key={m.id}>
@@ -377,38 +385,113 @@ function ResultsTab({ password }) {
               마감: {new Date(m.deadline).toLocaleString('ko-KR')}
             </p>
 
-            {['A', 'B'].map((team) => (
-              <div key={team} style={{ marginTop: 14 }}>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                  {team === 'A' ? m.team_a_name : m.team_b_name}
-                  <span style={{ color: 'var(--accent-2)', fontWeight: 400, marginLeft: 8 }}>
-                    합계 {team === 'A' ? totalA : totalB}
-                  </span>
-                </div>
-                {teamScores[team].map((p, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                    <span style={{ width: 70, fontSize: 13, color: 'var(--muted)' }}>{p.name}</span>
-                    {['g1', 'g2', 'g3'].map((g) => (
-                      <input
-                        key={g}
-                        type="number"
-                        placeholder={g.toUpperCase()}
-                        value={p[g] ?? ''}
-                        onChange={(e) => updateScore(m.id, team, i, g, e.target.value)}
-                      />
-                    ))}
+            {['A', 'B'].map((team) => {
+              const avg = team === 'A' ? avgA : avgB;
+              const benchmark = team === 'A' ? m.benchmark_a : m.benchmark_b;
+              return (
+                <div key={team} style={{ marginTop: 14 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>
+                    {team === 'A' ? m.team_a_name : m.team_b_name}
+                    <span style={{ color: 'var(--accent-2)', fontWeight: 400, marginLeft: 8 }}>
+                      합계 {team === 'A' ? totalA : totalB} · 평균 {avg} (기준 {benchmark})
+                    </span>
                   </div>
-                ))}
-              </div>
-            ))}
+                  {teamScores[team].map((p, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ width: 70, fontSize: 13, color: 'var(--muted)' }}>{p.name}</span>
+                      {['g1', 'g2', 'g3'].map((g) => (
+                        <input
+                          key={g}
+                          type="number"
+                          placeholder={g.toUpperCase()}
+                          value={p[g] ?? ''}
+                          onChange={(e) => updateScore(m.id, team, i, g, e.target.value)}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
 
             <button className="primary" style={{ width: '100%', marginTop: 14 }} onClick={() => submitResult(m)}>
-              점수 저장 및 정산
+              점수 저장 및 정산 (승부 + 업다운 자동 계산)
             </button>
             {msg[m.id] && <p className={`msg ${msg[m.id].type}`}>{msg[m.id].text}</p>}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ============================================================
+// 4. 배팅 내역 탭 (경기별 - 누가 어디에 얼마 배팅했는지)
+// ============================================================
+const MARKET_LABEL = { WINLOSE: '승부', UPDOWN_A: 'A팀 업다운', UPDOWN_B: 'B팀 업다운' };
+
+function BetsTab() {
+  const [matches, setMatches] = useState([]);
+  const [betsByMatch, setBetsByMatch] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data: matchRows } = await supabase.from('matches').select('*').order('created_at', { ascending: false });
+      setMatches(matchRows || []);
+
+      const { data: betRows } = await supabase
+        .from('bets')
+        .select('*, users(name, email)')
+        .order('created_at', { ascending: false });
+
+      const grouped = {};
+      (betRows || []).forEach((b) => {
+        if (!grouped[b.match_id]) grouped[b.match_id] = [];
+        grouped[b.match_id].push(b);
+      });
+      setBetsByMatch(grouped);
+      setLoading(false);
+    })();
+  }, []);
+
+  if (loading) return <p className="empty">불러오는 중...</p>;
+
+  function choiceLabel(m, bet) {
+    if (bet.market === 'WINLOSE') return bet.choice === 'A' ? m.team_a_name : m.team_b_name;
+    return bet.choice === 'UP' ? '업(UP)' : '다운(DOWN)';
+  }
+
+  return (
+    <div>
+      {matches.map((m) => {
+        const bets = betsByMatch[m.id] || [];
+        if (bets.length === 0) return null;
+        return (
+          <div className="card" key={m.id}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <strong>{m.title}</strong>
+              <span className={`status-tag ${m.status.toLowerCase()}`}>{m.status}</span>
+            </div>
+            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
+              총 {bets.length}건 · 총 배팅액 {bets.reduce((s, b) => s + b.points_bet, 0)}P
+            </p>
+            <div style={{ marginTop: 10 }}>
+              {bets.map((b) => (
+                <div className="bet-history-item" key={b.id}>
+                  <span>
+                    {b.users?.name || '알 수 없음'} · {MARKET_LABEL[b.market]} · {choiceLabel(m, b)} · {b.points_bet}P
+                  </span>
+                  <span style={{ color: b.settled ? (b.won ? 'var(--accent-2)' : b.won === null ? 'var(--muted)' : 'var(--danger)') : 'var(--muted)' }}>
+                    {!b.settled ? '대기' : b.won === null ? `환불 ${b.points_won}P` : b.won ? `+${b.points_won}P 적중` : '낙첨'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      {matches.every((m) => (betsByMatch[m.id] || []).length === 0) && <p className="empty">배팅 내역이 없습니다.</p>}
     </div>
   );
 }

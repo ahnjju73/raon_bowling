@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../lib/supabaseAdmin';
+import { computePariMutuelPayouts } from '../../../lib/payout';
 
 function checkAdmin(password) {
   return password && password === process.env.ADMIN_PASSWORD;
@@ -19,6 +20,26 @@ function validateScores(scores, teamName) {
   return null;
 }
 
+async function settleMarket(matchId, market, winningChoice) {
+  const { data: bets, error } = await supabaseAdmin.from('bets').select('*').eq('match_id', matchId).eq('market', market);
+  if (error) throw new Error(error.message);
+  if (!bets || bets.length === 0) return 0;
+
+  const payouts = computePariMutuelPayouts(bets, winningChoice);
+
+  for (const p of payouts) {
+    await supabaseAdmin.from('bets').update({ settled: true, won: p.won, points_won: p.points_won }).eq('id', p.id);
+    if (p.points_won > 0) {
+      const bet = bets.find((b) => b.id === p.id);
+      const { data: user } = await supabaseAdmin.from('users').select('points').eq('id', bet.user_id).single();
+      if (user) {
+        await supabaseAdmin.from('users').update({ points: user.points + p.points_won }).eq('id', bet.user_id);
+      }
+    }
+  }
+  return bets.length;
+}
+
 export async function POST(req) {
   const { password, matchId, scoresA, scoresB } = await req.json();
 
@@ -29,12 +50,7 @@ export async function POST(req) {
     return NextResponse.json({ error: '잘못된 요청입니다.' }, { status: 400 });
   }
 
-  const { data: match, error: matchError } = await supabaseAdmin
-    .from('matches')
-    .select('*')
-    .eq('id', matchId)
-    .single();
-
+  const { data: match, error: matchError } = await supabaseAdmin.from('matches').select('*').eq('id', matchId).single();
   if (matchError || !match) {
     return NextResponse.json({ error: '경기를 찾을 수 없습니다.' }, { status: 404 });
   }
@@ -57,37 +73,53 @@ export async function POST(req) {
     );
   }
 
-  const result = totalA > totalB ? 'A' : 'B';
-  const odds = result === 'A' ? Number(match.odds_a) : Number(match.odds_b);
+  const winloseResult = totalA > totalB ? 'A' : 'B';
+  const avgA = totalA / 3;
+  const avgB = totalB / 3;
 
-  // 배팅 정산
-  const { data: bets, error: betsError } = await supabaseAdmin.from('bets').select('*').eq('match_id', matchId);
-  if (betsError) {
-    return NextResponse.json({ error: betsError.message }, { status: 500 });
-  }
+  const updownResult = (avg, benchmark) => {
+    if (benchmark === null || benchmark === undefined) return null;
+    if (avg > Number(benchmark)) return 'UP';
+    if (avg < Number(benchmark)) return 'DOWN';
+    return 'PUSH';
+  };
 
-  for (const bet of bets) {
-    const won = bet.choice === result;
-    const pointsWon = won ? Math.round(bet.points_bet * odds) : 0;
+  const resultUpdownA = updownResult(avgA, match.benchmark_a);
+  const resultUpdownB = updownResult(avgB, match.benchmark_b);
 
-    await supabaseAdmin.from('bets').update({ settled: true, won, points_won: pointsWon }).eq('id', bet.id);
+  try {
+    const settledWinlose = await settleMarket(matchId, 'WINLOSE', winloseResult);
+    const settledUpA = await settleMarket(matchId, 'UPDOWN_A', resultUpdownA === 'PUSH' ? null : resultUpdownA);
+    const settledUpB = await settleMarket(matchId, 'UPDOWN_B', resultUpdownB === 'PUSH' ? null : resultUpdownB);
 
-    if (won) {
-      const { data: user } = await supabaseAdmin.from('users').select('points').eq('id', bet.user_id).single();
-      if (user) {
-        await supabaseAdmin.from('users').update({ points: user.points + pointsWon }).eq('id', bet.user_id);
-      }
+    const { error: updateError } = await supabaseAdmin
+      .from('matches')
+      .update({
+        scores_a: scoresA,
+        scores_b: scoresB,
+        total_a: totalA,
+        total_b: totalB,
+        result: winloseResult,
+        result_updown_a: resultUpdownA,
+        result_updown_b: resultUpdownB,
+        status: 'SETTLED',
+      })
+      .eq('id', matchId);
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
+
+    return NextResponse.json({
+      success: true,
+      totalA,
+      totalB,
+      result: winloseResult,
+      resultUpdownA,
+      resultUpdownB,
+      settledCount: settledWinlose + settledUpA + settledUpB,
+    });
+  } catch (e) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
   }
-
-  const { error: updateError } = await supabaseAdmin
-    .from('matches')
-    .update({ scores_a: scoresA, scores_b: scoresB, result, status: 'SETTLED' })
-    .eq('id', matchId);
-
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ success: true, totalA, totalB, result, settledCount: bets.length });
 }
