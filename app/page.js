@@ -67,6 +67,24 @@ export default function HomePage() {
     setAmounts((a) => ({ ...a, [key(matchId, market)]: value }));
   }
 
+  async function deleteBet(betId) {
+    if (!confirm('이 배팅을 삭제하고 포인트를 환불받으시겠습니까?')) return;
+
+    const res = await fetch('/api/bet/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, betId }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert('삭제 실패: ' + data.error);
+      return;
+    }
+    alert(`삭제 완료! ${data.pointsRefunded}P 환불되었습니다.`);
+    loadData(userId);
+  }
+
   async function placeBet(matchId, market) {
     const k = key(matchId, market);
     const choice = selections[k];
@@ -110,6 +128,8 @@ export default function HomePage() {
   function teamTotal(players) {
     return (players || []).reduce((sum, p) => sum + (Number(p.g1) || 0) + (Number(p.g2) || 0) + (Number(p.g3) || 0), 0);
   }
+
+  
 
   if (loading) return <div className="container"><p className="empty">불러오는 중...</p></div>;
 
