@@ -10,8 +10,8 @@ export default function HomePage() {
   const [points, setPoints] = useState(null);
   const [matches, setMatches] = useState([]);
   const [myBets, setMyBets] = useState([]);
-  const [selections, setSelections] = useState({}); // matchId -> 'A' | 'B'
-  const [amounts, setAmounts] = useState({}); // matchId -> number
+  const [selections, setSelections] = useState({});
+  const [amounts, setAmounts] = useState({});
   const [msg, setMsg] = useState({});
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -23,15 +23,12 @@ export default function HomePage() {
       setUserName(userRow.name);
     }
 
-    const { data: matchRows } = await supabase
-      .from('matches')
-      .select('*')
-      .order('deadline', { ascending: true });
+    const { data: matchRows } = await supabase.from('matches').select('*').order('deadline', { ascending: true });
     setMatches(matchRows || []);
 
     const { data: betRows } = await supabase
       .from('bets')
-      .select('*, matches(title, team_a, team_b, result, status)')
+      .select('*, matches(title, team_a_name, team_b_name, result, status)')
       .eq('user_id', uid)
       .order('created_at', { ascending: false });
     setMyBets(betRows || []);
@@ -52,7 +49,6 @@ export default function HomePage() {
   function selectTeam(matchId, choice) {
     setSelections((s) => ({ ...s, [matchId]: choice }));
   }
-
   function setAmount(matchId, value) {
     setAmounts((a) => ({ ...a, [matchId]: value }));
   }
@@ -86,7 +82,6 @@ export default function HomePage() {
       setMsg((m) => ({ ...m, [match.id]: { type: 'error', text: data.error || '배팅 실패' } }));
       return;
     }
-
     setMsg((m) => ({ ...m, [match.id]: { type: 'success', text: '배팅 완료!' } }));
     loadData(userId);
   }
@@ -97,14 +92,19 @@ export default function HomePage() {
     router.push('/login');
   }
 
+  function teamTotal(players) {
+    return (players || []).reduce((sum, p) => sum + (Number(p.g1) || 0) + (Number(p.g2) || 0) + (Number(p.g3) || 0), 0);
+  }
+
   if (loading) return <div className="container"><p className="empty">불러오는 중...</p></div>;
 
   const openMatches = matches.filter((m) => m.status !== 'SETTLED');
+  const settledMatches = matches.filter((m) => m.status === 'SETTLED');
 
   return (
     <>
       <div className="header">
-        <h1>🏆 동호회 토토</h1>
+        <h1>🎳 동호회 토토</h1>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <span className="points-badge">{userName} · {points}P</span>
           <button className="ghost" onClick={logout}>로그아웃</button>
@@ -113,20 +113,19 @@ export default function HomePage() {
 
       <div className="container">
         <h2 style={{ fontSize: 15, color: 'var(--muted)', margin: '20px 0 10px' }}>진행 중인 경기</h2>
-
         {openMatches.length === 0 && <p className="empty">아직 등록된 경기가 없습니다.</p>}
 
         {openMatches.map((match) => {
           const isClosed = match.status !== 'OPEN' || new Date(match.deadline) < new Date();
           const myBetForMatch = myBets.find((b) => b.match_id === match.id);
+          const playersA = (match.scores_a || []).map((p) => p.name).join(', ');
+          const playersB = (match.scores_b || []).map((p) => p.name).join(', ');
 
           return (
             <div className="card" key={match.id}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="match-title">{match.title}</div>
-                <span className={`status-tag ${isClosed ? 'closed' : 'open'}`}>
-                  {isClosed ? '마감' : '배팅 가능'}
-                </span>
+                <span className={`status-tag ${isClosed ? 'closed' : 'open'}`}>{isClosed ? '마감' : '배팅 가능'}</span>
               </div>
 
               <div className="teams">
@@ -135,7 +134,8 @@ export default function HomePage() {
                   onClick={() => !isClosed && !myBetForMatch && selectTeam(match.id, 'A')}
                   style={{ opacity: isClosed || myBetForMatch ? 0.6 : 1 }}
                 >
-                  <div className="name">{match.team_a}</div>
+                  <div className="name">{match.team_a_name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{playersA}</div>
                   <div className="odds">배당 {match.odds_a}</div>
                 </div>
                 <div
@@ -143,14 +143,15 @@ export default function HomePage() {
                   onClick={() => !isClosed && !myBetForMatch && selectTeam(match.id, 'B')}
                   style={{ opacity: isClosed || myBetForMatch ? 0.6 : 1 }}
                 >
-                  <div className="name">{match.team_b}</div>
+                  <div className="name">{match.team_b_name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{playersB}</div>
                   <div className="odds">배당 {match.odds_b}</div>
                 </div>
               </div>
 
               {myBetForMatch ? (
                 <p className="msg success">
-                  이미 배팅함: {myBetForMatch.choice === 'A' ? match.team_a : match.team_b} · {myBetForMatch.points_bet}P
+                  이미 배팅함: {myBetForMatch.choice === 'A' ? match.team_a_name : match.team_b_name} · {myBetForMatch.points_bet}P
                 </p>
               ) : (
                 !isClosed && (
@@ -165,11 +166,38 @@ export default function HomePage() {
                   </div>
                 )
               )}
-
               {msg[match.id] && <p className={`msg ${msg[match.id].type}`}>{msg[match.id].text}</p>}
             </div>
           );
         })}
+
+        {settledMatches.length > 0 && (
+          <>
+            <h2 style={{ fontSize: 15, color: 'var(--muted)', margin: '30px 0 10px' }}>지난 경기 결과</h2>
+            {settledMatches.map((match) => {
+              const totalA = teamTotal(match.scores_a);
+              const totalB = teamTotal(match.scores_b);
+              return (
+                <div className="card" key={match.id}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <div className="match-title">{match.title}</div>
+                    <span className="status-tag settled">SETTLED</span>
+                  </div>
+                  <div className="teams">
+                    <div className={`team-btn ${match.result === 'A' ? 'selected' : ''}`} style={{ cursor: 'default' }}>
+                      <div className="name">{match.team_a_name} {match.result === 'A' && '🏆'}</div>
+                      <div className="odds">{totalA}점</div>
+                    </div>
+                    <div className={`team-btn ${match.result === 'B' ? 'selected' : ''}`} style={{ cursor: 'default' }}>
+                      <div className="name">{match.team_b_name} {match.result === 'B' && '🏆'}</div>
+                      <div className="odds">{totalB}점</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
 
         <h2 style={{ fontSize: 15, color: 'var(--muted)', margin: '30px 0 10px' }}>내 배팅 내역</h2>
         <div className="card">
@@ -177,7 +205,7 @@ export default function HomePage() {
           {myBets.map((b) => (
             <div className="bet-history-item" key={b.id}>
               <span>
-                {b.matches?.title} · {b.choice === 'A' ? b.matches?.team_a : b.matches?.team_b} · {b.points_bet}P
+                {b.matches?.title} · {b.choice === 'A' ? b.matches?.team_a_name : b.matches?.team_b_name} · {b.points_bet}P
               </span>
               <span style={{ color: b.settled ? (b.won ? 'var(--accent-2)' : 'var(--danger)') : 'var(--muted)' }}>
                 {b.settled ? (b.won ? `+${b.points_won}P 적중` : '낙첨') : '결과 대기'}

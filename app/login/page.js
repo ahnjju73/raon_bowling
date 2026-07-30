@@ -19,12 +19,13 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
+    const normalizedEmail = email.trim().toLowerCase();
 
-    // 이미 등록된 이메일인지 확인
+    // 이미 등록된 이메일인지 확인 (대소문자 구분 없이)
     const { data: existing } = await supabase
       .from('users')
       .select('*')
-      .eq('email', email.trim())
+      .eq('email', normalizedEmail)
       .maybeSingle();
 
     let user = existing;
@@ -32,7 +33,7 @@ export default function LoginPage() {
     if (!user) {
       const { data: created, error: insertError } = await supabase
         .from('users')
-        .insert({ name: name.trim(), email: email.trim() })
+        .insert({ name: name.trim(), email: normalizedEmail })
         .select()
         .single();
 
