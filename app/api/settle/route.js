@@ -31,10 +31,11 @@ async function settleMarket(matchId, market, winningChoice) {
     await supabaseAdmin.from('bets').update({ settled: true, won: p.won, points_won: p.points_won }).eq('id', p.id);
     if (p.points_won > 0) {
       const bet = bets.find((b) => b.id === p.id);
-      const { data: user } = await supabaseAdmin.from('users').select('points').eq('id', bet.user_id).single();
-      if (user) {
-        await supabaseAdmin.from('users').update({ points: user.points + p.points_won }).eq('id', bet.user_id);
-      }
+      const { error: creditError } = await supabaseAdmin.rpc('increment_points', {
+        p_user_id: bet.user_id,
+        p_delta: p.points_won,
+      });
+      if (creditError) throw new Error(creditError.message);
     }
   }
   return bets.length;
@@ -87,28 +88,35 @@ export async function POST(req) {
   const resultUpdownA = updownResult(avgA, match.benchmark_a);
   const resultUpdownB = updownResult(avgB, match.benchmark_b);
 
+  // 정산 상태를 먼저 원자적으로 SETTLED 전환 (버튼 중복 클릭/재시도로 인한 이중 지급 방지)
+  const { data: claimed, error: claimError } = await supabaseAdmin
+    .from('matches')
+    .update({
+      scores_a: scoresA,
+      scores_b: scoresB,
+      total_a: totalA,
+      total_b: totalB,
+      result: winloseResult,
+      result_updown_a: resultUpdownA,
+      result_updown_b: resultUpdownB,
+      status: 'SETTLED',
+    })
+    .eq('id', matchId)
+    .neq('status', 'SETTLED')
+    .select()
+    .maybeSingle();
+
+  if (claimError) {
+    return NextResponse.json({ error: claimError.message }, { status: 500 });
+  }
+  if (!claimed) {
+    return NextResponse.json({ error: '이미 정산된 경기입니다.' }, { status: 400 });
+  }
+
   try {
     const settledWinlose = await settleMarket(matchId, 'WINLOSE', winloseResult);
     const settledUpA = await settleMarket(matchId, 'UPDOWN_A', resultUpdownA === 'PUSH' ? null : resultUpdownA);
     const settledUpB = await settleMarket(matchId, 'UPDOWN_B', resultUpdownB === 'PUSH' ? null : resultUpdownB);
-
-    const { error: updateError } = await supabaseAdmin
-      .from('matches')
-      .update({
-        scores_a: scoresA,
-        scores_b: scoresB,
-        total_a: totalA,
-        total_b: totalB,
-        result: winloseResult,
-        result_updown_a: resultUpdownA,
-        result_updown_b: resultUpdownB,
-        status: 'SETTLED',
-      })
-      .eq('id', matchId);
-
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
-    }
 
     return NextResponse.json({
       success: true,

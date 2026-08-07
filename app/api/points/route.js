@@ -16,18 +16,20 @@ export async function POST(req) {
     return NextResponse.json({ error: '유저와 포인트 값을 입력해주세요.' }, { status: 400 });
   }
 
-  const { data: user, error: userError } = await supabaseAdmin.from('users').select('points').eq('id', userId).single();
+  const { data: user, error: userError } = await supabaseAdmin.from('users').select('id').eq('id', userId).maybeSingle();
   if (userError || !user) {
     return NextResponse.json({ error: '유저를 찾을 수 없습니다.' }, { status: 404 });
   }
 
-  const newPoints = user.points + Number(amount);
-  if (newPoints < 0) {
-    return NextResponse.json({ error: '포인트가 0보다 작아질 수 없습니다.' }, { status: 400 });
-  }
+  const { data: newPoints, error } = await supabaseAdmin.rpc('increment_points', {
+    p_user_id: userId,
+    p_delta: Number(amount),
+  });
 
-  const { error } = await supabaseAdmin.from('users').update({ points: newPoints }).eq('id', userId);
   if (error) {
+    if (error.message?.includes('INSUFFICIENT_POINTS')) {
+      return NextResponse.json({ error: '포인트가 0보다 작아질 수 없습니다.' }, { status: 400 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

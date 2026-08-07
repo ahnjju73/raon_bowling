@@ -36,18 +36,14 @@ export async function POST(req) {
     return NextResponse.json({ error: '마감된 경기의 배팅은 삭제할 수 없습니다.' }, { status: 400 });
   }
 
-  // 4. 포인트 환불
-  const { data: user } = await supabaseAdmin
-    .from('users')
-    .select('points')
-    .eq('id', userId)
-    .single();
+  // 4. 포인트 원자적 환불
+  const { error: refundError } = await supabaseAdmin.rpc('increment_points', {
+    p_user_id: userId,
+    p_delta: bet.points_bet,
+  });
 
-  if (user) {
-    await supabaseAdmin
-      .from('users')
-      .update({ points: user.points + bet.points_bet })
-      .eq('id', userId);
+  if (refundError) {
+    return NextResponse.json({ error: '포인트 환불 실패' }, { status: 500 });
   }
 
   // 5. 배팅 기록 삭제

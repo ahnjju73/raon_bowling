@@ -47,27 +47,27 @@ export async function POST(req) {
     return NextResponse.json({ error: '이미 이 항목에 배팅했습니다.' }, { status: 400 });
   }
 
-  // 3. 유저 포인트 확인
+  // 3. 유저 존재 확인
   const { data: user, error: userError } = await supabaseAdmin
     .from('users')
-    .select('points')
+    .select('id')
     .eq('id', userId)
-    .single();
+    .maybeSingle();
 
   if (userError || !user) {
     return NextResponse.json({ error: '유저를 찾을 수 없습니다.' }, { status: 404 });
   }
-  if (user.points < points) {
-    return NextResponse.json({ error: '보유 포인트가 부족합니다.' }, { status: 400 });
-  }
 
-  // 4. 포인트 차감
-  const { error: deductError } = await supabaseAdmin
-    .from('users')
-    .update({ points: user.points - points })
-    .eq('id', userId);
+  // 4. 포인트 원자적 차감 (동시에 여러 배팅을 걸어도 각각 정확히 차감됨)
+  const { error: deductError } = await supabaseAdmin.rpc('increment_points', {
+    p_user_id: userId,
+    p_delta: -points,
+  });
 
   if (deductError) {
+    if (deductError.message?.includes('INSUFFICIENT_POINTS')) {
+      return NextResponse.json({ error: '보유 포인트가 부족합니다.' }, { status: 400 });
+    }
     return NextResponse.json({ error: '포인트 차감 실패' }, { status: 500 });
   }
 
@@ -78,7 +78,10 @@ export async function POST(req) {
 
   if (betError) {
     // 롤백
-    await supabaseAdmin.from('users').update({ points: user.points }).eq('id', userId);
+    await supabaseAdmin.rpc('increment_points', { p_user_id: userId, p_delta: points });
+    if (betError.code === '23505') {
+      return NextResponse.json({ error: '이미 이 항목에 배팅했습니다.' }, { status: 400 });
+    }
     return NextResponse.json({ error: '배팅 기록 실패' }, { status: 500 });
   }
 
